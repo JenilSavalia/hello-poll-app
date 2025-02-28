@@ -21,6 +21,8 @@ const connectDB = async () => {
 
 connectDB();
 
+
+// Add user
 app.post("/user", async (req, res) => {
     const { Name, Email } = req.body;
 
@@ -44,18 +46,40 @@ app.post('/poll', async (req, res) => {
 
     const { poll_details, Created_by } = req.body;
 
+    if (!poll_details || !Created_by || !poll_details.poll_options) {
+        return res.status(400).json({ error: 'poll_details and Created_by are required, and poll_details must contain poll_options' });
+    }
+
     try {
         const NewPoll = new PollDetail({ poll_details, Created_by });
         await NewPoll.save();
+
 
         await User.updateOne(
             { _id: NewPoll.Created_by },
             { $addToSet: { UserPoll: NewPoll._id } }
         )
 
-        res.json({ PollId: NewPoll.id })
+
+        // Initialize selected_options with poll_options, setting each option's count to 0
+        const initialOptions = NewPoll.poll_details.poll_options.reduce((acc, option) => {
+            acc[option] = 0;
+            return acc;
+        }, {});
+
+
+
+        await PollResult.create({
+            poll_id: NewPoll._id,
+            selected_options: initialOptions
+        })
+
+
+
+
+        res.json({ PollId: NewPoll._id })
     } catch (err) {
-        res.json({ Error: err })
+        res.status(500).json({ Error: err.message })
     }
 
 })
@@ -80,45 +104,67 @@ app.get('/poll/:poll_id', async (req, res) => {
 
 // Post the vote
 app.post('/vote', async (req, res) => {
-    const { poll_id, selected_option } = req.body;
+    const { poll_id, selected_option, VotePerIP } = req.body;
     const voted_ip = req.ip;
 
-    // Validate required fields
+
     if (!poll_id || !selected_option) {
         return res.status(400).json({ error: 'poll_id and selected_option are required' });
     }
 
+    // Convert VotePerIP to a boolean
+    const allowMultipleVotes = VotePerIP === "false" ? false : true;
+
+
     try {
+
         let result = await PollResult.findOne({ poll_id });
 
         if (!result) {
-            // If no result exists, create a new one
-            const newResult = new PollResult({
-                poll_id: poll_id,
-                selected_option: [selected_option], 
-                voted_ips: [voted_ip],
-            });
-
-            await newResult.save();
-            return res.json({ PollResult: newResult });
+            return res.status(404).json({ error: 'Poll not found' });
         }
 
-        // if (result.voted_ips.includes(voted_ip)) {
-        //     return res.status(400).json({ error: 'You have already voted' });
-        // }
+        if (result.selected_options[selected_option] === undefined) {
+            return res.status(400).json({ error: 'Invalid selected_option' });
+        }
 
-        result.selected_option.push(selected_option);
-        result.voted_ips.push(voted_ip);
+        // Use atomic operations to update the poll result
+        let updatedResult;
 
-        await result.save();
+        if (!allowMultipleVotes) {
+            // If multiple votes are allowed, skip the IP check and increment the vote count
+            updatedResult = await PollResult.findOneAndUpdate(
+                { poll_id }, // No IP check
+                {
+                    $inc: { [`selected_options.${selected_option}`]: 1 }, // Increment the selected option count
+                    $push: { voted_ips: voted_ip }, // Add the voter's IP
+                },
+                { new: true } // Return the updated document
+            );
+        } else {
+            // If multiple votes are not allowed, enforce one vote per IP
+            updatedResult = await PollResult.findOneAndUpdate(
+                { poll_id, voted_ips: { $ne: voted_ip } }, // Ensure the IP hasn't voted
+                {
+                    $inc: { [`selected_options.${selected_option}`]: 1 }, // Increment the selected option count
+                    $push: { voted_ips: voted_ip }, // Add the voter's IP
+                },
+                { new: true } // Return the updated document
+            );
 
-        return res.json({ PollResult: result });
+            // If no document was updated, it means the IP has already voted
+            if (!updatedResult) {
+                return res.status(400).json({ error: 'You have already voted' });
+            }
+        }
+
+        // Return the updated poll result
+        return res.json({ PollResult: updatedResult });
     } catch (err) {
         console.error('Error in /vote:', err);
         return res.status(500).json({ error: 'An error occurred while processing your vote' });
     }
 });
-
 
 // get Poll Result By poll_id
 

@@ -11,14 +11,8 @@ const pollResultSchema = mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "Poll"
     },
-    selected_option: [
-        // {
-        //     type: mongoose.Schema.Types.ObjectId,
-        //     ref: "Poll",
-        // }
-        { type: String, required: true }
-    ],
-    voted_ips: [{ type: String, required: true }]
+    selected_options: { type: Object, default: {} }, // Object to store option counts
+    voted_ips: [{ type: String, required: true, default: [] }]
 
 
 }, { timestamps: true })

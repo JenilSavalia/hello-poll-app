@@ -9,6 +9,7 @@ const pollSchema = mongoose.Schema({
     poll_details: {
         poll_title: { type: String, required: true },
         poll_options: [{ type: String, required: true }],
+        oneVotePerIP: { type: String, required: true }
     },
 
     poll_result: {
