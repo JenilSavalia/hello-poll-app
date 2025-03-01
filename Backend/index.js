@@ -1,7 +1,7 @@
 import { PollResult } from "./Model/PollResult.js"
 import { PollDetail } from "./Model/PollDetail.js"
 import { User } from "./Model/User.js"
-import express from 'express'
+import express, { response } from 'express'
 import mongoose from "mongoose"
 
 const app = express()
@@ -94,7 +94,7 @@ app.get('/poll/:poll_id', async (req, res) => {
         const findPoll = await PollDetail.findById(poll_id)
         res.json({ PollData: findPoll })
     } catch (err) {
-        res.json({ Error: err })
+        res.status(500).json({ Error: err.message })
     }
 
 })
@@ -166,10 +166,27 @@ app.post('/vote', async (req, res) => {
     }
 });
 
+
+
 // get Poll Result By poll_id
+app.get("/vote/result/:Poll_id", async (req, res) => {
 
+    const { Poll_id } = req.params;
 
+    try {
 
+        const Resposes = await PollResult.findOne({ poll_id: Poll_id })
+        if (!Resposes) {
+            return res.status(404).json({ Error: "Poll Not Found" })
+        }
+
+        return res.status(201).json({ Result: Resposes.selected_options })
+
+    } catch (err) {
+        return res.status(500).json({ Error: err.message })
+    }
+
+})
 
 
 
